@@ -1,4 +1,4 @@
-import type { ScanPhase } from "../../../shared/types";
+import type { ScanPhase } from "../../shared/types";
 
 const PHASE_LABELS: Record<ScanPhase, string> = {
   "collecting-nodes": "Collecting nodes",

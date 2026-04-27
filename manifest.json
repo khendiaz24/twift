@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Twift",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Scan any page and extract a production-ready Tailwind CSS v4 @theme block.",
 
   "permissions": [
@@ -9,7 +9,13 @@
     "scripting",
     "sidePanel",
     "storage",
-    "clipboardWrite"
+    "clipboardWrite",
+    "identity"
+  ],
+
+  "host_permissions": [
+    "https://accounts.google.com/*",
+    "https://www.googleapis.com/*"
   ],
 
   "background": {
@@ -45,5 +51,10 @@
     "32": "assets/icons/icon-32.png",
     "48": "assets/icons/icon-48.png",
     "128": "assets/icons/icon-128.png"
+  },
+
+  "oauth2": {
+    "client_id": "__GOOGLE_CLIENT_ID__",
+    "scopes": ["openid", "email", "profile"]
   }
 }

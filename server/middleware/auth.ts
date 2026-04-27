@@ -1,10 +1,21 @@
-import type { MiddlewareHandler } from "hono";
+// ============================================================
+// server/middleware/auth.ts
+// Validates the Bearer JWT on every /api/* request.
+// Sets userId, email, name, tier, aiExportsUsed on the Hono context.
+// ============================================================
 
-/**
- * Validates the Bearer token and attaches `userId` and `tier` to the context.
- * In production: verify a JWT (jose / hono/jwt) and query your DB for tier.
- */
-export const authMiddleware: MiddlewareHandler = async (c, next) => {
+import type { MiddlewareHandler } from "hono";
+import { jwtVerify } from "jose";
+import { getUserById } from "../db";
+import type { HonoVariables } from "../types";
+
+function getJwtSecret(): Uint8Array {
+  const secret = process.env["JWT_SECRET"];
+  if (!secret) throw new Error("JWT_SECRET is not set");
+  return new TextEncoder().encode(secret);
+}
+
+export const authMiddleware: MiddlewareHandler<{ Variables: HonoVariables }> = async (c, next) => {
   const auth = c.req.header("Authorization");
   if (!auth?.startsWith("Bearer ")) {
     return c.json({ error: "Unauthorized" }, 401);
@@ -12,20 +23,25 @@ export const authMiddleware: MiddlewareHandler = async (c, next) => {
 
   const token = auth.slice(7);
 
-  // TODO: replace with real JWT verification
-  // import { jwtVerify } from "jose";
-  // const { payload } = await jwtVerify(token, secret);
-  // c.set("userId", payload.sub);
-  // c.set("tier", payload.tier);
+  try {
+    const { payload } = await jwtVerify(token, getJwtSecret());
 
-  if (token === "dev-token") {
-    // Development bypass
-    c.set("userId", "dev-user");
-    c.set("tier", "pro");
-  } else {
-    // In production: decode & verify JWT
-    c.set("userId", "unknown");
-    c.set("tier", "free");
+    const userId = payload["sub"] as string;
+    if (!userId) throw new Error("Missing sub");
+
+    // Always look up from DB so revoked subscriptions take effect immediately
+    const user = await getUserById(userId);
+    if (!user) {
+      return c.json({ error: "User not found" }, 401);
+    }
+
+    c.set("userId", user.id);
+    c.set("email", user.email);
+    c.set("name", user.name);
+    c.set("tier", user.tier);
+    c.set("aiExportsUsed", user.ai_exports_used);
+  } catch {
+    return c.json({ error: "Invalid or expired token" }, 401);
   }
 
   await next();

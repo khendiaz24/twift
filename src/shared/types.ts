@@ -151,7 +151,11 @@ export type ExtensionMessage =
   | { type: "SCAN_COMPLETE"; payload: ScanResult }
   | { type: "SCAN_ERROR"; payload: { message: string } }
   | { type: "REQUEST_ENRICHMENT"; payload: ScanResult }
-  | { type: "ENRICHMENT_COMPLETE"; payload: EnrichedScanResult };
+  | { type: "ENRICHMENT_COMPLETE"; payload: EnrichedScanResult }
+  | { type: "GOOGLE_AUTH_START" }
+  | { type: "AUTH_SUCCESS"; payload: UserSession }
+  | { type: "AUTH_ERROR"; payload: { message: string } }
+  | { type: "LOGOUT" };
 
 export type ScanPhase =
   | "collecting-nodes"
@@ -160,3 +164,30 @@ export type ScanPhase =
   | "extracting-spacing"
   | "deduplicating"
   | "done";
+
+// ------------------------------------------------------------------
+// Auth / Subscription
+// ------------------------------------------------------------------
+
+/** Tier of the user's account */
+export type Tier = "free" | "pro";
+
+/** Stored in chrome.storage.local after successful Google OAuth */
+export interface UserSession {
+  /** Twift JWT (30-day expiry) */
+  token: string;
+  /** Google email */
+  email: string;
+  /** Display name from Google */
+  name: string;
+  /** Google profile picture URL */
+  picture: string;
+  /** Subscription tier */
+  tier: Tier;
+  /** Number of AI exports used this calendar month */
+  aiExportsUsed: number;
+  /** ISO string of when the monthly counter resets */
+  aiExportsResetAt: string;
+  /** JWT expiry as Unix timestamp (seconds) */
+  exp: number;
+}

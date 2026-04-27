@@ -402,13 +402,12 @@ function normaliseFontFamily(raw: string): string {
  * setTimeout(0) which is the universal option.
  */
 function yieldToMain(): Promise<void> {
-  if (
-    typeof globalThis.scheduler !== "undefined" &&
-    typeof (globalThis.scheduler as { postTask?: unknown }).postTask === "function"
-  ) {
-    return (globalThis.scheduler as {
-      postTask: (cb: () => void, opts: { priority: string }) => Promise<void>;
-    }).postTask(() => {}, { priority: "background" });
+  interface Scheduler {
+    postTask: (cb: () => void, opts: { priority: string }) => Promise<void>;
+  }
+  const sched = (globalThis as unknown as { scheduler?: Scheduler }).scheduler;
+  if (sched?.postTask) {
+    return sched.postTask(() => {}, { priority: "background" });
   }
   return new Promise<void>((resolve) => setTimeout(resolve, 0));
 }

@@ -1,4 +1,4 @@
-import { useEffect, useReducer } from "react";
+import { useEffect, useReducer, useState } from "react";
 import type {
   EnrichedScanResult,
   ExtensionMessage,
@@ -10,10 +10,16 @@ import {
   generateThemeBlock,
   generateDesignTokens,
 } from "../shared/theme-generator";
+import { SERVER_URL, FREE_AI_EXPORTS_PER_MONTH } from "../shared/config";
 import { ScanProgress } from "./components/ScanProgress";
 import { ColorPalette } from "./components/ColorPalette";
 import { ThemeBlock } from "./components/ThemeBlock";
 import { TokenExporter } from "./components/TokenExporter";
+import { AuthGate } from "./components/AuthGate";
+import { ProBadge } from "./components/ProBadge";
+import { UpgradeModal } from "./components/UpgradeModal";
+import { AiUsageIndicator } from "./components/AiUsageIndicator";
+import { useAuth } from "./hooks/useAuth";
 
 // ─── State ───────────────────────────────────────────────────────────────────
 
@@ -37,11 +43,7 @@ function reducer(state: AppState, action: Action): AppState {
     case "START_SCAN":
       return { status: "scanning", phase: "collecting-nodes", progress: 0 };
     case "PROGRESS":
-      return {
-        status: "scanning",
-        phase: action.phase,
-        progress: action.progress,
-      };
+      return { status: "scanning", phase: action.phase, progress: action.progress };
     case "SCAN_COMPLETE":
       return { status: "enriching" };
     case "ENRICH_COMPLETE":
@@ -59,29 +61,18 @@ function reducer(state: AppState, action: Action): AppState {
 
 export function App() {
   const [state, dispatch] = useReducer(reducer, { status: "idle" });
+  const [useAI, setUseAI] = useState(false);
+  const [showUpgrade, setShowUpgrade] = useState(false);
+  const { session, isLoading, login, logout, incrementAiUsage } = useAuth();
 
   // Listen for messages from the service worker relay
   useEffect(() => {
     const handler = (message: ExtensionMessage) => {
       if (message.type === "SCAN_PROGRESS") {
-        dispatch({
-          type: "PROGRESS",
-          phase: message.payload.phase,
-          progress: message.payload.progress,
-        });
+        dispatch({ type: "PROGRESS", phase: message.payload.phase, progress: message.payload.progress });
       } else if (message.type === "SCAN_COMPLETE") {
         dispatch({ type: "SCAN_COMPLETE", raw: message.payload });
-        // Enrich on the panel side — no round-trip needed for heuristic labelling
-        enrichResult(message.payload)
-          .then((result) => {
-            dispatch({ type: "ENRICH_COMPLETE", result });
-          })
-          .catch((err) => {
-            dispatch({
-              type: "ERROR",
-              message: err instanceof Error ? err.message : "Enrichment failed",
-            });
-          });
+        handleEnrich(message.payload);
       } else if (message.type === "SCAN_ERROR") {
         dispatch({ type: "ERROR", message: message.payload.message });
       }
@@ -89,108 +80,150 @@ export function App() {
 
     chrome.runtime.onMessage.addListener(handler);
     return () => chrome.runtime.onMessage.removeListener(handler);
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [useAI, session]);
+
+  async function handleEnrich(raw: ScanResult) {
+    try {
+      let result: EnrichedScanResult;
+
+      if (useAI && session) {
+        // Server-side AI enrichment
+        result = await serverEnrich(raw, session.token, incrementAiUsage);
+      } else {
+        // Client-side heuristic (free, no server round-trip)
+        result = await heuristicEnrich(raw);
+      }
+
+      dispatch({ type: "ENRICH_COMPLETE", result });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Enrichment failed";
+      // If quota exceeded, show upgrade modal instead of error
+      if (message === "AI_QUOTA_EXCEEDED") {
+        setShowUpgrade(true);
+        // Fall back to heuristic result
+        const fallback = await heuristicEnrich(raw);
+        dispatch({ type: "ENRICH_COMPLETE", result: fallback });
+        setUseAI(false);
+      } else {
+        dispatch({ type: "ERROR", message });
+      }
+    }
+  }
 
   function triggerScan() {
     dispatch({ type: "START_SCAN" });
     chrome.runtime.sendMessage<ExtensionMessage>({ type: "TRIGGER_SCAN" });
   }
 
+  function handleAiToggle() {
+    if (!session) return;
+    if (!useAI && session.tier === "free" && session.aiExportsUsed >= FREE_AI_EXPORTS_PER_MONTH) {
+      setShowUpgrade(true);
+      return;
+    }
+    setUseAI((v) => !v);
+  }
+
+  const scanning = state.status === "scanning" || state.status === "enriching";
+
   return (
-    <div className="panel-root">
-      <Header
-        onScan={triggerScan}
-        scanning={state.status === "scanning" || state.status === "enriching"}
-      />
+    <AuthGate session={session} isLoading={isLoading} onLogin={login}>
+      <div className="panel-root">
+        {showUpgrade && session && (
+          <UpgradeModal session={session} onClose={() => setShowUpgrade(false)} />
+        )}
 
-      {state.status === "idle" && <IdleScreen onScan={triggerScan} />}
-
-      {(state.status === "scanning" || state.status === "enriching") && (
-        <ScanProgress
-          phase={state.status === "enriching" ? "done" : state.phase}
-          progress={state.status === "enriching" ? 100 : state.progress}
-          enriching={state.status === "enriching"}
+        <Header
+          onScan={triggerScan}
+          scanning={scanning}
+          useAI={useAI}
+          onAiToggle={handleAiToggle}
+          session={session}
+          onLogout={logout}
         />
-      )}
 
-      {state.status === "error" && (
-        <div className="error-banner">
-          <span className="error-icon">⚠</span>
-          <p>{state.message}</p>
-          <button onClick={() => dispatch({ type: "RESET" })}>Dismiss</button>
-        </div>
-      )}
+        {session && (
+          <AiUsageIndicator session={session} />
+        )}
 
-      {state.status === "done" && (
-        <ResultView result={state.result} onRescan={triggerScan} />
-      )}
-    </div>
+        {state.status === "idle" && <IdleScreen onScan={triggerScan} />}
+
+        {scanning && (
+          <ScanProgress
+            phase={state.status === "enriching" ? "done" : (state as { phase: ScanPhase }).phase}
+            progress={state.status === "enriching" ? 100 : (state as { progress: number }).progress}
+            enriching={state.status === "enriching"}
+          />
+        )}
+
+        {state.status === "error" && (
+          <div className="error-banner">
+            <span className="error-icon">⚠</span>
+            <p>{state.message}</p>
+            <button onClick={() => dispatch({ type: "RESET" })}>Dismiss</button>
+          </div>
+        )}
+
+        {state.status === "done" && (
+          <ResultView result={state.result} onRescan={triggerScan} />
+        )}
+      </div>
+    </AuthGate>
   );
 }
 
 // ─── Sub-views ────────────────────────────────────────────────────────────────
 
-function Header({
-  onScan,
-  scanning,
-}: {
+interface HeaderProps {
   onScan: () => void;
   scanning: boolean;
-}) {
+  useAI: boolean;
+  onAiToggle: () => void;
+  session: ReturnType<typeof useAuth>["session"];
+  onLogout: () => void;
+}
+
+function Header({ onScan, scanning, useAI, onAiToggle, session, onLogout }: HeaderProps) {
   return (
     <header className="panel-header">
       <div className="panel-logo">
         <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-          <rect
-            x="2"
-            y="2"
-            width="7"
-            height="7"
-            rx="1.5"
-            fill="currentColor"
-            opacity="0.9"
-          />
-          <rect
-            x="11"
-            y="2"
-            width="7"
-            height="7"
-            rx="1.5"
-            fill="currentColor"
-            opacity="0.6"
-          />
-          <rect
-            x="2"
-            y="11"
-            width="7"
-            height="7"
-            rx="1.5"
-            fill="currentColor"
-            opacity="0.4"
-          />
-          <rect
-            x="11"
-            y="11"
-            width="7"
-            height="7"
-            rx="1.5"
-            fill="currentColor"
-            opacity="0.2"
-          />
+          <rect x="2" y="2" width="7" height="7" rx="1.5" fill="currentColor" opacity="0.9" />
+          <rect x="11" y="2" width="7" height="7" rx="1.5" fill="currentColor" opacity="0.6" />
+          <rect x="2" y="11" width="7" height="7" rx="1.5" fill="currentColor" opacity="0.4" />
+          <rect x="11" y="11" width="7" height="7" rx="1.5" fill="currentColor" opacity="0.2" />
         </svg>
         <span>Twift</span>
       </div>
-      <button className="scan-btn" onClick={onScan} disabled={scanning}>
-        {scanning ? (
-          <>
-            <span className="spin">⟳</span> Scanning…
-          </>
-        ) : (
-          <>
-            <span>◎</span> Scan page
-          </>
-        )}
-      </button>
+
+      <div className="header-actions">
+        {/* AI toggle */}
+        <button
+          id="ai-toggle-btn"
+          className={`ai-toggle ${useAI ? "ai-toggle--on" : ""}`}
+          onClick={onAiToggle}
+          title={useAI ? "AI labelling ON — click to disable" : "Enable AI labelling (Pro feature)"}
+        >
+          <span className="ai-toggle-star">★</span>
+          AI
+        </button>
+
+        <button
+          id="scan-btn"
+          className="scan-btn"
+          onClick={onScan}
+          disabled={scanning}
+        >
+          {scanning ? (
+            <><span className="spin">⟳</span> Scanning…</>
+          ) : (
+            <><span>◎</span> Scan page</>
+          )}
+        </button>
+
+        {session && <ProBadge session={session} onLogout={onLogout} />}
+      </div>
     </header>
   );
 }
@@ -222,6 +255,7 @@ function IdleScreen({ onScan }: { onScan: () => void }) {
         <li>✦ Typography scale extraction</li>
         <li>✦ 4px spacing snapper</li>
         <li>✦ Copy CSS or export JSON</li>
+        <li>★ AI labels (Pro)</li>
       </ul>
     </div>
   );
@@ -237,16 +271,10 @@ function ResultView({
   return (
     <div className="result-view">
       <div className="result-meta">
-        <span className="meta-pill">
-          {result.nodesScanned.toLocaleString()} nodes
-        </span>
+        <span className="meta-pill">{result.nodesScanned.toLocaleString()} nodes</span>
         <span className="meta-pill">{result.colors.length} colors</span>
-        <span className="meta-pill">
-          {result.typography.length} type styles
-        </span>
-        <span className="meta-pill">
-          {result.spacing.length} spacing values
-        </span>
+        <span className="meta-pill">{result.typography.length} type styles</span>
+        <span className="meta-pill">{result.spacing.length} spacing values</span>
       </div>
 
       <section className="result-section">
@@ -264,16 +292,14 @@ function ResultView({
         <TokenExporter result={result} />
       </section>
 
-      <button className="rescan-btn" onClick={onRescan}>
-        ↺ Rescan page
-      </button>
+      <button className="rescan-btn" onClick={onRescan}>↺ Rescan page</button>
     </div>
   );
 }
 
-// ─── Enrichment (client-side heuristic, Phase 1) ─────────────────────────────
+// ─── Enrichment helpers ───────────────────────────────────────────────────────
 
-async function enrichResult(raw: ScanResult): Promise<EnrichedScanResult> {
+async function heuristicEnrich(raw: ScanResult): Promise<EnrichedScanResult> {
   const colors = labelColors(raw.colors);
   const themeBlock = generateThemeBlock({
     ...raw,
@@ -288,4 +314,32 @@ async function enrichResult(raw: ScanResult): Promise<EnrichedScanResult> {
     designTokens: { color: {}, fontSize: {}, fontFamily: {}, spacing: {} },
   });
   return { ...raw, colors, themeBlock, designTokens };
+}
+
+async function serverEnrich(
+  raw: ScanResult,
+  token: string,
+  onAiSuccess: () => void
+): Promise<EnrichedScanResult> {
+  const res = await fetch(`${SERVER_URL}/api/tokens/enrich`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ scan: raw, useAI: true }),
+  });
+
+  if (res.status === 402) {
+    throw new Error("AI_QUOTA_EXCEEDED");
+  }
+
+  if (!res.ok) {
+    throw new Error("Server enrichment failed");
+  }
+
+  onAiSuccess();
+
+  const data = (await res.json()) as { result: EnrichedScanResult };
+  return data.result;
 }

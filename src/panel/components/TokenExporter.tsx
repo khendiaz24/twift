@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { EnrichedScanResult } from "../../../shared/types";
+import type { EnrichedScanResult } from "../../shared/types";
 
 interface Props {
   result: EnrichedScanResult;

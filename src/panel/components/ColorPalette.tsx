@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { SemanticColorToken } from "../../../shared/types";
+import type { SemanticColorToken } from "../../shared/types";
 
 interface Props {
   colors: SemanticColorToken[];
