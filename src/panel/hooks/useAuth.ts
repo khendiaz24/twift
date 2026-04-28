@@ -5,6 +5,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import type { UserSession, ExtensionMessage } from "../../shared/types";
+import { SERVER_URL } from "../../shared/config";
 
 export interface AuthState {
   session: UserSession | null;
@@ -17,13 +18,42 @@ export function useAuth() {
     isLoading: true,
   });
 
-  // Load persisted session on mount
+  // Load persisted session on mount, then refresh tier from server
   useEffect(() => {
-    chrome.storage.local.get("twift_session", (result) => {
+    chrome.storage.local.get("twift_session", async (result) => {
       const stored = result["twift_session"] as UserSession | undefined;
 
       if (stored && isSessionValid(stored)) {
+        // Set immediately from cache, then refresh tier from server
         setState({ session: stored, isLoading: false });
+
+        try {
+          const res = await fetch(`${SERVER_URL}/api/user/me`, {
+            headers: { Authorization: `Bearer ${stored.token}` },
+          });
+          if (res.ok) {
+            const data = (await res.json()) as {
+              ok: boolean;
+              user: {
+                tier: UserSession["tier"];
+                aiExportsUsed: number;
+                aiExportsResetAt: string;
+              };
+            };
+            if (data.ok) {
+              const refreshed: UserSession = {
+                ...stored,
+                tier: data.user.tier,
+                aiExportsUsed: data.user.aiExportsUsed,
+                aiExportsResetAt: data.user.aiExportsResetAt,
+              };
+              chrome.storage.local.set({ twift_session: refreshed });
+              setState({ session: refreshed, isLoading: false });
+            }
+          }
+        } catch {
+          // Network error — keep using cached session
+        }
       } else {
         // Expired or missing
         chrome.storage.local.remove("twift_session");

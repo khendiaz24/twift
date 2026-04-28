@@ -39,7 +39,7 @@ const SCHEMA = `
     name                TEXT NOT NULL DEFAULT '',
     picture             TEXT NOT NULL DEFAULT '',
     google_id           TEXT UNIQUE,
-    stripe_customer_id  TEXT,
+    lemon_customer_id   TEXT,
     tier                TEXT NOT NULL DEFAULT 'free',
     ai_exports_used     INTEGER NOT NULL DEFAULT 0,
     ai_exports_reset_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-01', 'now')),
@@ -59,8 +59,18 @@ const SCHEMA = `
 export async function initDb(): Promise<void> {
   const db = getClient();
   // Execute each statement separately (libsql doesn't support multi-statement exec)
-  for (const stmt of SCHEMA.split(";").map((s) => s.trim()).filter(Boolean)) {
+  for (const stmt of SCHEMA.split(";")
+    .map((s) => s.trim())
+    .filter(Boolean)) {
     await db.execute(stmt);
+  }
+
+  // ── Migrations ──────────────────────────────────────────────────────────────
+  // Add lemon_customer_id if migrating from old stripe_customer_id schema
+  try {
+    await db.execute("ALTER TABLE users ADD COLUMN lemon_customer_id TEXT");
+  } catch {
+    // Column already exists — ignore
   }
 }
 
@@ -72,7 +82,7 @@ export interface DbUser {
   name: string;
   picture: string;
   google_id: string | null;
-  stripe_customer_id: string | null;
+  lemon_customer_id: string | null;
   tier: "free" | "pro";
   ai_exports_used: number;
   ai_exports_reset_at: string;
@@ -113,25 +123,25 @@ export async function getUserById(id: string): Promise<DbUser | null> {
   return (result.rows[0] as unknown as DbUser) ?? null;
 }
 
-export async function getUserByStripeCustomer(
-  customerId: string
+export async function getUserByLemonCustomer(
+  customerId: string,
 ): Promise<DbUser | null> {
   const db = getClient();
   const result = await db.execute({
-    sql: "SELECT * FROM users WHERE stripe_customer_id = ?",
+    sql: "SELECT * FROM users WHERE lemon_customer_id = ?",
     args: [customerId],
   });
   return (result.rows[0] as unknown as DbUser) ?? null;
 }
 
-/** Set a user's Stripe customer ID */
-export async function setStripeCustomer(
+/** Set a user's LemonSqueezy customer ID */
+export async function setLemonCustomer(
   userId: string,
-  customerId: string
+  customerId: string,
 ): Promise<void> {
   const db = getClient();
   await db.execute({
-    sql: "UPDATE users SET stripe_customer_id = ? WHERE id = ?",
+    sql: "UPDATE users SET lemon_customer_id = ? WHERE id = ?",
     args: [customerId, userId],
   });
 }
@@ -139,7 +149,7 @@ export async function setStripeCustomer(
 /** Upgrade or downgrade a user's tier */
 export async function setTier(
   userId: string,
-  tier: "free" | "pro"
+  tier: "free" | "pro",
 ): Promise<void> {
   const db = getClient();
   await db.execute({

@@ -20,7 +20,7 @@ export function UpgradeModal({ session, onClose }: Props) {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${SERVER_URL}/stripe/create-checkout`, {
+      const res = await fetch(`${SERVER_URL}/lemonsqueezy/create-checkout`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -51,7 +51,9 @@ export function UpgradeModal({ session, onClose }: Props) {
         <div className="modal-header">
           <div className="modal-pro-icon">★</div>
           <h2 className="modal-title">Upgrade to Pro</h2>
-          <button className="modal-close" onClick={onClose} aria-label="Close">✕</button>
+          <button className="modal-close" onClick={onClose} aria-label="Close">
+            ✕
+          </button>
         </div>
 
         <p className="modal-sub">
@@ -78,7 +80,9 @@ export function UpgradeModal({ session, onClose }: Props) {
             </div>
             <ul>
               <li>✓ Everything in Free</li>
-              <li>✓ <strong>Unlimited AI labels</strong></li>
+              <li>
+                ✓ <strong>Unlimited AI labels</strong>
+              </li>
               <li>✓ Scan history (last 20)</li>
               <li>✓ Priority support</li>
             </ul>

@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { tokensRoute } from "./routes/tokens";
-import { stripeRoute } from "./routes/stripe";
+import { lemonsqueezyRoute } from "./routes/lemonsqueezy";
 import { authRoute } from "./routes/auth";
 import { userRoute } from "./routes/user";
 import { authMiddleware } from "./middleware/auth";
@@ -22,7 +22,7 @@ app.use(
     origin: ["chrome-extension://*", "http://localhost:3000"],
     allowMethods: ["GET", "POST", "OPTIONS"],
     allowHeaders: ["Content-Type", "Authorization"],
-  })
+  }),
 );
 
 // ── Health ───────────────────────────────────────────────────────────────────
@@ -30,8 +30,8 @@ app.get("/health", (c) => c.json({ ok: true, ts: Date.now() }));
 
 // ── Public routes ─────────────────────────────────────────────────────────────
 app.route("/auth", authRoute);
-app.route("/stripe", stripeRoute);
-app.route("/checkout", stripeRoute); // success / cancel pages
+app.route("/lemonsqueezy", lemonsqueezyRoute);
+app.route("/checkout", lemonsqueezyRoute); // success / cancel pages
 
 // ── Protected routes ─────────────────────────────────────────────────────────
 app.use("/api/*", authMiddleware);
