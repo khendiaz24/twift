@@ -14,6 +14,7 @@ import { ScanProgress } from "./components/ScanProgress";
 import { ColorPalette } from "./components/ColorPalette";
 import { ThemeBlock } from "./components/ThemeBlock";
 import { TokenExporter } from "./components/TokenExporter";
+import { DonateButton } from "./components/DonateButton";
 
 // ─── State ───────────────────────────────────────────────────────────────────
 
@@ -223,6 +224,7 @@ function IdleScreen({ onScan }: { onScan: () => void }) {
         <li>✦ 4px spacing snapper</li>
         <li>✦ Copy CSS or export JSON</li>
       </ul>
+      <DonateButton />
     </div>
   );
 }
@@ -267,6 +269,7 @@ function ResultView({
       <button className="rescan-btn" onClick={onRescan}>
         ↺ Rescan page
       </button>
+      <DonateButton />
     </div>
   );
 }
