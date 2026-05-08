@@ -1,30 +1,16 @@
 {
   "manifest_version": 3,
   "name": "Twift",
-  "version": "0.1.0",
-  "description": "Scan any page and extract a production-ready Tailwind CSS v4 @theme block.",
+  "version": "0.2.0",
+  "description": "Extract CSS variables and generate a Tailwind CSS v4 @theme block from the active tab.",
 
-  "permissions": [
-    "activeTab",
-    "scripting",
-    "sidePanel",
-    "storage",
-    "clipboardWrite"
-  ],
+  "permissions": ["activeTab", "scripting", "sidePanel", "clipboardWrite"],
+  "host_permissions": ["<all_urls>"],
 
   "background": {
     "service_worker": "src/background/service-worker.js",
     "type": "module"
   },
-
-  "content_scripts": [
-    {
-      "matches": ["<all_urls>"],
-      "js": ["src/content/index.js"],
-      "run_at": "document_idle",
-      "all_frames": false
-    }
-  ],
 
   "side_panel": {
     "default_path": "src/panel/index.html"

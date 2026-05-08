@@ -54,10 +54,11 @@ const SPACING_PROPS: SpacingProperty[] = [
 ];
 
 /** Colours that are transparent/none and should be skipped */
-const SKIP_COLOR_PATTERNS = /^(transparent|rgba?\(0,\s*0,\s*0,\s*0\)|none|initial|inherit|currentcolor)$/i;
+const SKIP_COLOR_PATTERNS =
+  /^(transparent|rgba?\(0,\s*0,\s*0,\s*0\)|none|initial|inherit|currentcolor)$/i;
 
 /** Minimum frequency for a colour to be included in the palette */
-const MIN_COLOR_FREQUENCY = 2;
+const MIN_COLOR_FREQUENCY = 1;
 
 // ------------------------------------------------------------------
 // Progress callback type
@@ -74,7 +75,7 @@ export type ProgressCallback = (phase: ScanPhase, progress: number) => void;
  * Non-blocking: yields to the browser between each CHUNK_SIZE batch.
  */
 export async function scanPage(
-  onProgress?: ProgressCallback
+  onProgress?: ProgressCallback,
 ): Promise<ScanResult> {
   const startedAt = Date.now();
   const report = (phase: ScanPhase, progress: number) =>
@@ -113,11 +114,11 @@ export async function scanPage(
     .sort((a, b) => b.frequency - a.frequency);
 
   const typography = Array.from(typographySet.values()).sort(
-    (a, b) => b.frequency - a.frequency
+    (a, b) => b.frequency - a.frequency,
   );
 
   const spacing = Array.from(spacingMap.values()).sort(
-    (a, b) => b.frequency - a.frequency
+    (a, b) => b.frequency - a.frequency,
   );
 
   report("done", 100);
@@ -146,12 +147,14 @@ function collectElements(): Element[] {
       acceptNode(node) {
         const tag = (node as Element).tagName.toLowerCase();
         // Skip non-visual nodes
-        if (["script", "style", "noscript", "meta", "link", "head"].includes(tag)) {
+        if (
+          ["script", "style", "noscript", "meta", "link", "head"].includes(tag)
+        ) {
           return NodeFilter.FILTER_REJECT;
         }
         return NodeFilter.FILTER_ACCEPT;
       },
-    }
+    },
   );
 
   const elements: Element[] = [];
@@ -170,7 +173,7 @@ function processChunk(
   elements: Element[],
   colorMap: Map<string, RawColor>,
   typographySet: Map<string, TypographyToken>,
-  spacingMap: Map<string, SpacingToken>
+  spacingMap: Map<string, SpacingToken>,
 ): void {
   for (const el of elements) {
     // One getComputedStyle call per element — do NOT call it inside loops
@@ -187,7 +190,7 @@ function processChunk(
 
 function extractColors(
   style: CSSStyleDeclaration,
-  colorMap: Map<string, RawColor>
+  colorMap: Map<string, RawColor>,
 ): void {
   for (const prop of COLOR_PROPS) {
     const raw = style.getPropertyValue(prop).trim();
@@ -225,7 +228,7 @@ function extractColors(
 
 function extractTypography(
   style: CSSStyleDeclaration,
-  typographySet: Map<string, TypographyToken>
+  typographySet: Map<string, TypographyToken>,
 ): void {
   const fontFamily = style.getPropertyValue("font-family").trim();
   const fontSizeRaw = style.getPropertyValue("font-size").trim();
@@ -265,14 +268,14 @@ function extractTypography(
 
 function extractSpacing(
   style: CSSStyleDeclaration,
-  spacingMap: Map<string, SpacingToken>
+  spacingMap: Map<string, SpacingToken>,
 ): void {
   for (const prop of SPACING_PROPS) {
     const raw = style.getPropertyValue(prop).trim();
     if (!raw || raw === "0px" || raw === "auto" || raw === "normal") continue;
 
     const valuePx = parseFloat(raw);
-    if (isNaN(valuePx) || valuePx <= 0) return;
+    if (isNaN(valuePx) || valuePx <= 0) continue;
 
     const snappedPx = snapToGrid(valuePx, 4);
     const snappedRem = +(snappedPx / 16).toFixed(4);
@@ -306,7 +309,7 @@ function extractSpacing(
 function parseColor(value: string): RGBA | null {
   // rgb(r, g, b) or rgba(r, g, b, a)
   const rgbMatch = value.match(
-    /rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)(?:\s*,\s*([\d.]+))?\s*\)/
+    /rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)(?:\s*,\s*([\d.]+))?\s*\)/,
   );
   if (rgbMatch) {
     return {
@@ -319,7 +322,7 @@ function parseColor(value: string): RGBA | null {
 
   // CSS Color Level 4: rgb(r g b / a)
   const rgb4Match = value.match(
-    /rgba?\(\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)(?:\s*\/\s*([\d.]+%?))?\s*\)/
+    /rgba?\(\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)(?:\s*\/\s*([\d.]+%?))?\s*\)/,
   );
   if (rgb4Match) {
     const alpha = rgb4Match[4]
@@ -346,8 +349,16 @@ function parseColor(value: string): RGBA | null {
 
 function hexToRGBA(hex: string): RGBA | null {
   let h = hex;
-  if (h.length === 3) h = h.split("").map((c) => c + c).join("");
-  if (h.length === 4) h = h.split("").map((c) => c + c).join("");
+  if (h.length === 3)
+    h = h
+      .split("")
+      .map((c) => c + c)
+      .join("");
+  if (h.length === 4)
+    h = h
+      .split("")
+      .map((c) => c + c)
+      .join("");
   if (h.length === 6) h += "ff";
   if (h.length !== 8) return null;
 
@@ -404,11 +415,14 @@ function normaliseFontFamily(raw: string): string {
 function yieldToMain(): Promise<void> {
   if (
     typeof globalThis.scheduler !== "undefined" &&
-    typeof (globalThis.scheduler as { postTask?: unknown }).postTask === "function"
+    typeof (globalThis.scheduler as { postTask?: unknown }).postTask ===
+      "function"
   ) {
-    return (globalThis.scheduler as {
-      postTask: (cb: () => void, opts: { priority: string }) => Promise<void>;
-    }).postTask(() => {}, { priority: "background" });
+    return (
+      globalThis.scheduler as {
+        postTask: (cb: () => void, opts: { priority: string }) => Promise<void>;
+      }
+    ).postTask(() => {}, { priority: "background" });
   }
   return new Promise<void>((resolve) => setTimeout(resolve, 0));
 }
